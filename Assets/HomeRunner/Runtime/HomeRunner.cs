@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 
 namespace HomeRunner
 {
@@ -16,6 +19,12 @@ namespace HomeRunner
         readonly Color[] colors = { new Color(.3f,.65f,.58f), new Color(.38f,.47f,.6f), new Color(.75f,.48f,.32f), new Color(.5f,.4f,.7f), new Color(.25f,.3f,.5f) };
         Transform runner, body, leftArm, rightArm, leftLeg, rightLeg;
         Camera view;
+        Canvas hud;
+        Text scoreText, roomText, routeText, modalTitle, modalDetail, actionText;
+        GameObject modal;
+        Font uiFont;
+        Animator characterAnimator;
+        readonly HashSet<string> animationParameters = new HashSet<string>();
         float distance, x, jump, velocity, slide, phase;
         int floor, targetFloor, lane, currentChunk, best;
         bool locked, dead, paused, started;
@@ -33,6 +42,8 @@ namespace HomeRunner
             foreach (var camera in FindObjectsByType<Camera>(FindObjectsSortMode.None)) camera.gameObject.SetActive(false);
             view = new GameObject("Runner Camera").AddComponent<Camera>();
             view.fieldOfView = 65;
+            view.allowMSAA = true;
+            QualitySettings.antiAliasing = 4;
             view.farClipPlane = 180;
             view.clearFlags = CameraClearFlags.SolidColor;
             view.backgroundColor = new Color(.075f,.09f,.14f);
@@ -42,6 +53,7 @@ namespace HomeRunner
             RenderSettings.ambientLight = new Color(.6f,.62f,.68f);
             CreateRunner();
             ResetRun();
+            CreateInterface();
         }
         Material Mat(Color color)
         {
@@ -58,18 +70,24 @@ namespace HomeRunner
             Destroy(g.GetComponent<Collider>());
             return g.transform;
         }
-        void Label(Transform parent, string title, Vector3 p)
-        {
-            var g = new GameObject(title); g.transform.SetParent(parent,false);
-            g.transform.localPosition = p; g.transform.localRotation = Quaternion.Euler(0,180,0);
-            var text = g.AddComponent<TextMesh>(); text.text = title;
-            text.anchor = TextAnchor.MiddleCenter; text.characterSize = .17f; text.fontSize = 48;
-            text.color = Color.white;
-        }
         void CreateRunner()
         {
             runner = new GameObject("Original articulated runner").transform;
             body = new GameObject("Body").transform; body.SetParent(runner,false);
+            // Optional production character. Prefab must face +Z with feet at y=0.
+            var prefab = Resources.Load<GameObject>("HomeRunner/Runner");
+            if (prefab != null)
+            {
+                var model = Instantiate(prefab, body);
+                characterAnimator = model.GetComponentInChildren<Animator>();
+                if (characterAnimator != null)
+                {
+                    characterAnimator.applyRootMotion = false;
+                    foreach (var parameter in characterAnimator.parameters)
+                        animationParameters.Add(parameter.name);
+                }
+                return;
+            }
             Color teal = new Color(.1f,.8f,.73f), skin = new Color(.73f,.48f,.32f), navy = new Color(.1f,.14f,.24f);
             Shape(body,"Jacket",new Vector3(0,1.25f,0),new Vector3(.65f,.7f,.4f),teal);
             Shape(body,"Head",new Vector3(0,1.9f,0),Vector3.one*.48f,skin,PrimitiveType.Sphere);
@@ -113,7 +131,6 @@ namespace HomeRunner
                 Shape(room,"Left wall",new Vector3(-5,2,12),new Vector3(.2f,4,24),colors[theme]);
                 Shape(room,"Right wall",new Vector3(5,2,12),new Vector3(.2f,4,24),colors[theme]);
                 Shape(room,"Door header",new Vector3(0,3.7f,23.8f),new Vector3(10,.5f,.35f),colors[theme]);
-                Label(room,themes[theme]+"  /  "+(f+1),new Vector3(0,3.15f,23.5f));
                 for (int l=-1;l<=1;l++)
                 {
                     int dest = Mathf.Clamp(f+l,0,2);
@@ -124,7 +141,6 @@ namespace HomeRunner
                         Shape(room,"Stair tread",new Vector3(l*2.6f,(dest-f)*Height*t-.1f,24+t*16),
                             new Vector3(2.55f,.2f,.5f),l==0?colors[theme]*.7f:new Color(.8f,.62f,.24f));
                     }
-                    Label(room,dest<f?"DOWN":dest>f?"UP":"STAY",new Vector3(l*2.6f,2.6f,23));
                 }
                 for (int side=-1;side<=1;side+=2)
                     for (int n=0;n<3;n++) Decorate(room,theme,side*4.1f,4+n*6);
@@ -233,10 +249,13 @@ namespace HomeRunner
             float local=distance-currentChunk*Length;
             float y=Mathf.Lerp(floor*Height,targetFloor*Height,Mathf.Clamp01((local-24)/16));
             runner.position=new Vector3(x,y+jump,local);
-            body.localScale=new Vector3(1,slide>0?.45f:1,1);
+            body.localScale=new Vector3(1,characterAnimator == null && slide>0?.45f:1,1);
             float swing=jump>0?15:Mathf.Sin(phase)*35;
+            if (leftLeg != null)
+            {
             leftLeg.localRotation=Quaternion.Euler(swing,0,0); rightLeg.localRotation=Quaternion.Euler(-swing,0,0);
             leftArm.localRotation=Quaternion.Euler(-swing,0,-8); rightArm.localRotation=Quaternion.Euler(swing,0,8);
+            }
             body.localRotation=Quaternion.Euler(dead?65:slide>0?15:0,0,(x-lane*2.6f)*-5);
             Vector3 desired=runner.position+new Vector3(-x*.6f,3.4f,-7);
             // Origin shifts happen by exactly one room, so snap z to prevent a camera sweep.
@@ -245,27 +264,76 @@ namespace HomeRunner
             view.transform.position=Vector3.Lerp(cameraPos,desired,1-Mathf.Exp(-8*dt));
             view.transform.LookAt(runner.position+Vector3.up*1.3f+Vector3.forward*4);
         }
-        void OnGUI()
+        RectTransform UIBox(Transform parent, string title, Vector2 min, Vector2 max, Vector2 low, Vector2 high)
         {
-            GUI.skin.label.fontSize=20; GUI.skin.button.fontSize=20;
-            GUI.Box(new Rect(16,16,440,150),"");
-            GUILayout.BeginArea(new Rect(30,25,415,135));
-            GUILayout.Label("HOME RUNNER  /  Floor "+(floor+1)+" of 3");
-            GUILayout.Label("Distance "+(int)distance+" m   |   Best "+best+" m");
-            GUILayout.Label(themes[(currentChunk*3+floor)%5]);
-            GUILayout.Label(locked?"Route committed":"Stairs: left DOWN / middle STAY / right UP");
-            GUILayout.EndArea();
-            GUI.Label(new Rect(20,Screen.height-65,900,60),"A/D or arrows: lanes   SPACE: jump   S: slide   ESC: pause   R: restart");
-            if(!started||dead||paused)
+            var rect = new GameObject(title, typeof(RectTransform)).GetComponent<RectTransform>();
+            rect.SetParent(parent, false);
+            rect.anchorMin=min; rect.anchorMax=max; rect.offsetMin=low; rect.offsetMax=high;
+            return rect;
+        }
+        Text UIText(Transform parent, string title, int size, TextAnchor alignment, Vector2 min, Vector2 max, Vector2 low, Vector2 high)
+        {
+            var t=UIBox(parent,title,min,max,low,high).gameObject.AddComponent<Text>();
+            t.text=title; t.font=uiFont; t.fontSize=size; t.alignment=alignment;
+            t.color=new Color(.94f,.95f,.96f); t.raycastTarget=false;
+            t.horizontalOverflow=HorizontalWrapMode.Wrap;
+            return t;
+        }
+        void CreateInterface()
+        {
+            uiFont=Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            var root=new GameObject("HomeRunner Interface",typeof(RectTransform),typeof(Canvas),typeof(CanvasScaler),typeof(GraphicRaycaster));
+            root.transform.SetParent(transform,false);
+            hud=root.GetComponent<Canvas>(); hud.renderMode=RenderMode.ScreenSpaceOverlay;
+            hud.sortingOrder=100;
+            var scaler=root.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution=new Vector2(1280,720);
+            scaler.screenMatchMode=CanvasScaler.ScreenMatchMode.Expand;
+            if (FindFirstObjectByType<EventSystem>() == null)
             {
-                var box=new Rect(Screen.width/2-210,Screen.height/2-105,420,210);
-                GUI.Box(box,"");
-                GUI.Label(new Rect(box.x+25,box.y+25,380,70),dead?"Run ended!":paused?"Paused":"Welcome home. How far can you run?");
-                if(GUI.Button(new Rect(box.x+50,box.y+110,320,50),dead?"Try again":paused?"Resume":"Start running"))
-                {
-                    if(dead) ResetRun();
-                    paused=false; started=true;
-                }
+                var events=new GameObject("HomeRunner Events",typeof(EventSystem),typeof(InputSystemUIInputModule));
+                events.transform.SetParent(transform,false);
+            }
+            var top=UIBox(root.transform,"Header",new Vector2(0,1),Vector2.one,new Vector2(24,-110),new Vector2(-24,-24));
+            top.gameObject.AddComponent<Image>().color=new Color(.035f,.045f,.06f,.93f);
+            UIText(top,"HOME / RUNNER",18,TextAnchor.MiddleLeft,Vector2.zero,new Vector2(.5f,1),new Vector2(24,35),new Vector2(0,-8));
+            roomText=UIText(top,"Room",24,TextAnchor.MiddleLeft,Vector2.zero,new Vector2(.6f,1),new Vector2(24,5),new Vector2(0,-38));
+            scoreText=UIText(top,"Distance",22,TextAnchor.MiddleRight,new Vector2(.6f,0),Vector2.one,new Vector2(0,0),new Vector2(-24,0));
+            routeText=UIText(root.transform,"Route",22,TextAnchor.UpperCenter,new Vector2(0,1),Vector2.one,new Vector2(24,-160),new Vector2(-24,-122));
+            UIText(root.transform,"A / D  Move     SPACE  Jump     S  Slide     ESC  Pause",18,TextAnchor.LowerCenter,Vector2.zero,new Vector2(1,0),new Vector2(24,24),new Vector2(-24,62));
+            var panel=UIBox(root.transform,"Menu",new Vector2(.5f,.5f),new Vector2(.5f,.5f),new Vector2(-260,-155),new Vector2(260,155));
+            modal=panel.gameObject;
+            modal.AddComponent<Image>().color=new Color(.035f,.045f,.06f,.98f);
+            var accent=UIBox(panel,"Accent",new Vector2(0,1),Vector2.one,new Vector2(0,-4),Vector2.zero);
+            accent.gameObject.AddComponent<Image>().color=new Color(.75f,.85f,.65f);
+            modalTitle=UIText(panel,"Title",40,TextAnchor.MiddleCenter,new Vector2(0,1),Vector2.one,new Vector2(24,-98),new Vector2(-24,-24));
+            modalDetail=UIText(panel,"Detail",20,TextAnchor.MiddleCenter,new Vector2(0,1),Vector2.one,new Vector2(24,-172),new Vector2(-24,-98));
+            var button=UIBox(panel,"Continue",Vector2.zero,new Vector2(1,0),new Vector2(36,32),new Vector2(-36,96));
+            var background=button.gameObject.AddComponent<Image>(); background.color=new Color(.75f,.85f,.65f);
+            var action=button.gameObject.AddComponent<Button>(); action.targetGraphic=background;
+            action.onClick.AddListener(()=>{ if(dead) ResetRun(); paused=false; started=true; });
+            actionText=UIText(button,"Action",22,TextAnchor.MiddleCenter,Vector2.zero,Vector2.one,Vector2.zero,Vector2.zero);
+            actionText.color=new Color(.05f,.08f,.06f);
+        }
+        void LateUpdate()
+        {
+            if(hud == null) return;
+            roomText.text=themes[(currentChunk*3+floor)%5]+"  /  FLOOR "+(floor+1);
+            scoreText.text=((int)distance)+" m   |   BEST "+best+" m";
+            float local=distance-currentChunk*Length;
+            routeText.text=locked?"FOLLOW YOUR ROUTE":local>15?"LEFT: "+(floor==0?"LEVEL":"DOWN")+"     CENTER: LEVEL     RIGHT: "+(floor==2?"LEVEL":"UP"):"";
+            modal.SetActive(!started||dead||paused);
+            modalTitle.text=dead?"Run complete":paused?"Take a breath":"HOME RUNNER";
+            modalDetail.text=dead?((int)distance)+" meters explored":"Five rooms. Three floors. Keep moving.";
+            actionText.text=dead?"RUN AGAIN":paused?"RESUME":"START RUNNING";
+            if(characterAnimator != null)
+            {
+                characterAnimator.speed=paused?0:1;
+                if(animationParameters.Contains("Speed")) characterAnimator.SetFloat("Speed",started&&!dead&&!paused?Mathf.Min(13,7+distance/600):0);
+                if(animationParameters.Contains("Grounded")) characterAnimator.SetBool("Grounded",jump<=0);
+                if(animationParameters.Contains("Sliding")) characterAnimator.SetBool("Sliding",slide>0);
+                if(animationParameters.Contains("Dead")) characterAnimator.SetBool("Dead",dead);
             }
         }
         void OnDestroy()

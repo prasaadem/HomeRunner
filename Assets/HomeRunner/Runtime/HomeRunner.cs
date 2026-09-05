@@ -16,7 +16,7 @@ namespace HomeRunner
         readonly Dictionary<Color, Material> materials = new Dictionary<Color, Material>();
         readonly List<Hazard> hazards = new List<Hazard>();
         readonly string[] themes = { "KITCHEN", "GARAGE", "LIVING ROOM", "GYM", "MEDIA ROOM" };
-        readonly Color[] colors = { new Color(.3f,.65f,.58f), new Color(.38f,.47f,.6f), new Color(.75f,.48f,.32f), new Color(.5f,.4f,.7f), new Color(.25f,.3f,.5f) };
+        readonly Color[] colors = { new Color(.67f,.64f,.58f), new Color(.38f,.40f,.41f), new Color(.56f,.49f,.41f), new Color(.46f,.49f,.47f), new Color(.27f,.29f,.32f) };
         Transform runner, body, leftArm, rightArm, leftLeg, rightLeg;
         Camera view;
         Canvas hud;
@@ -88,11 +88,11 @@ namespace HomeRunner
                 }
                 return;
             }
-            Color teal = new Color(.1f,.8f,.73f), skin = new Color(.73f,.48f,.32f), navy = new Color(.1f,.14f,.24f);
+            Color teal = new Color(.24f,.29f,.28f), skin = new Color(.73f,.48f,.32f), navy = new Color(.1f,.14f,.24f);
             Shape(body,"Jacket",new Vector3(0,1.25f,0),new Vector3(.65f,.7f,.4f),teal);
             Shape(body,"Head",new Vector3(0,1.9f,0),Vector3.one*.48f,skin,PrimitiveType.Sphere);
             Shape(body,"Hair",new Vector3(0,2.08f,-.02f),new Vector3(.49f,.2f,.46f),navy,PrimitiveType.Sphere);
-            Shape(body,"Backpack",new Vector3(0,1.3f,-.3f),new Vector3(.48f,.55f,.25f),new Color(1,.65f,.15f));
+            Shape(body,"Backpack",new Vector3(0,1.3f,-.3f),new Vector3(.48f,.55f,.25f),new Color(.39f,.31f,.23f));
             leftArm = Limb("Left arm",new Vector3(-.43f,1.5f,0),new Vector3(.22f,.65f,.22f),teal);
             rightArm = Limb("Right arm",new Vector3(.43f,1.5f,0),new Vector3(.22f,.65f,.22f),teal);
             leftLeg = Limb("Left leg",new Vector3(-.19f,.95f,0),new Vector3(.25f,.85f,.27f),navy);
@@ -139,7 +139,7 @@ namespace HomeRunner
                     {
                         float t = (step+.5f)/32f;
                         Shape(room,"Stair tread",new Vector3(l*2.6f,(dest-f)*Height*t-.1f,24+t*16),
-                            new Vector3(2.55f,.2f,.5f),l==0?colors[theme]*.7f:new Color(.8f,.62f,.24f));
+                            new Vector3(2.55f,.2f,.5f),l==0?colors[theme]*.7f:new Color(.48f,.42f,.34f));
                     }
                 }
                 for (int side=-1;side<=1;side+=2)
@@ -154,7 +154,7 @@ namespace HomeRunner
                     Shape(room,kind==0?"Jump crate":kind==1?"Slide bar":"Dodge cabinet",
                         new Vector3(l*2.6f,kind==0?.4f:kind==1?1.65f:1.1f,z),
                         new Vector3(1.8f,kind==0?.8f:kind==1?.35f:2.2f,.7f),
-                        kind==0?new Color(1,.55f,.15f):kind==1?new Color(.9f,.25f,.5f):new Color(.85f,.2f,.18f));
+                        kind==0?new Color(.68f,.46f,.23f):kind==1?new Color(.55f,.34f,.25f):new Color(.48f,.22f,.19f));
                 }
             }
         }
@@ -199,7 +199,7 @@ namespace HomeRunner
             {
                 if(k.rKey.wasPressedThisFrame) { ResetRun(); return; }
                 if(k.escapeKey.wasPressedThisFrame) paused=!paused;
-                if(k.enterKey.wasPressedThisFrame) started=true;
+                if((k.enterKey.wasPressedThisFrame || k.numpadEnterKey.wasPressedThisFrame) && (!started || dead || paused)) ActivateRun();
                 if(!locked && !dead && !paused)
                 {
                     if(k.aKey.wasPressedThisFrame||k.leftArrowKey.wasPressedThisFrame) lane=Mathf.Max(-1,lane-1);
@@ -290,13 +290,25 @@ namespace HomeRunner
             scaler.uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution=new Vector2(1280,720);
             scaler.screenMatchMode=CanvasScaler.ScreenMatchMode.Expand;
-            if (FindFirstObjectByType<EventSystem>() == null)
+            var events=FindFirstObjectByType<EventSystem>();
+            if(events == null)
             {
-                var events=new GameObject("HomeRunner Events",typeof(EventSystem),typeof(InputSystemUIInputModule));
-                events.transform.SetParent(transform,false);
+                var eventObject=new GameObject("HomeRunner Events",typeof(EventSystem));
+                eventObject.transform.SetParent(transform,false);
+                events=eventObject.GetComponent<EventSystem>();
             }
+            // Existing scenes can contain the legacy input module or unbound UI actions.
+            foreach(var oldModule in events.GetComponents<BaseInputModule>())
+                oldModule.enabled=false;
+            var input=events.GetComponent<InputSystemUIInputModule>();
+            if(input == null) input=events.gameObject.AddComponent<InputSystemUIInputModule>();
+            input.AssignDefaultActions();
+            input.enabled=true;
+            events.enabled=true;
+            Cursor.lockState=CursorLockMode.None;
+            Cursor.visible=true;
             var top=UIBox(root.transform,"Header",new Vector2(0,1),Vector2.one,new Vector2(24,-110),new Vector2(-24,-24));
-            top.gameObject.AddComponent<Image>().color=new Color(.035f,.045f,.06f,.93f);
+            top.gameObject.AddComponent<Image>().color=new Color(.065f,.065f,.07f,.96f);
             UIText(top,"HOME / RUNNER",18,TextAnchor.MiddleLeft,Vector2.zero,new Vector2(.5f,1),new Vector2(24,35),new Vector2(0,-8));
             roomText=UIText(top,"Room",24,TextAnchor.MiddleLeft,Vector2.zero,new Vector2(.6f,1),new Vector2(24,5),new Vector2(0,-38));
             scoreText=UIText(top,"Distance",22,TextAnchor.MiddleRight,new Vector2(.6f,0),Vector2.one,new Vector2(0,0),new Vector2(-24,0));
@@ -304,17 +316,24 @@ namespace HomeRunner
             UIText(root.transform,"A / D  Move     SPACE  Jump     S  Slide     ESC  Pause",18,TextAnchor.LowerCenter,Vector2.zero,new Vector2(1,0),new Vector2(24,24),new Vector2(-24,62));
             var panel=UIBox(root.transform,"Menu",new Vector2(.5f,.5f),new Vector2(.5f,.5f),new Vector2(-260,-155),new Vector2(260,155));
             modal=panel.gameObject;
-            modal.AddComponent<Image>().color=new Color(.035f,.045f,.06f,.98f);
+            modal.AddComponent<Image>().color=new Color(.065f,.065f,.07f,.98f);
             var accent=UIBox(panel,"Accent",new Vector2(0,1),Vector2.one,new Vector2(0,-4),Vector2.zero);
-            accent.gameObject.AddComponent<Image>().color=new Color(.75f,.85f,.65f);
+            accent.gameObject.AddComponent<Image>().color=new Color(.72f,.62f,.48f);
             modalTitle=UIText(panel,"Title",40,TextAnchor.MiddleCenter,new Vector2(0,1),Vector2.one,new Vector2(24,-98),new Vector2(-24,-24));
             modalDetail=UIText(panel,"Detail",20,TextAnchor.MiddleCenter,new Vector2(0,1),Vector2.one,new Vector2(24,-172),new Vector2(-24,-98));
             var button=UIBox(panel,"Continue",Vector2.zero,new Vector2(1,0),new Vector2(36,32),new Vector2(-36,96));
-            var background=button.gameObject.AddComponent<Image>(); background.color=new Color(.75f,.85f,.65f);
+            var background=button.gameObject.AddComponent<Image>(); background.color=new Color(.72f,.62f,.48f);
             var action=button.gameObject.AddComponent<Button>(); action.targetGraphic=background;
-            action.onClick.AddListener(()=>{ if(dead) ResetRun(); paused=false; started=true; });
+            action.onClick.AddListener(ActivateRun);
             actionText=UIText(button,"Action",22,TextAnchor.MiddleCenter,Vector2.zero,Vector2.one,Vector2.zero,Vector2.zero);
-            actionText.color=new Color(.05f,.08f,.06f);
+            actionText.color=new Color(.09f,.075f,.06f);
+        }
+        void ActivateRun()
+        {
+            if(dead) ResetRun();
+            paused=false;
+            started=true;
+            if(modal != null) modal.SetActive(false);
         }
         void LateUpdate()
         {

@@ -1,0 +1,5 @@
+Casual_Hoodie.fbx from Ultimate Modular Men Pack by Quaternius.
+License: CC0 1.0 Universal.
+Source: https://quaternius.com/packs/ultimatemodularcharacters.html
+Original public download: https://drive.google.com/uc?export=download&id=1V6PTazmnoBXyX1fI9WcCFssd5P_lTXM6
+The original FBX is distributed losslessly gzip-compressed. Build Character and Art extracts it in Unity.

@@ -130,6 +130,11 @@ namespace HomeRunner
                 Shape(room,"Exit landing",new Vector3(0,-.15f,44),new Vector3(10,.3f,8),colors[theme]*.65f);
                 Shape(room,"Left wall",new Vector3(-5,2,12),new Vector3(.2f,4,24),colors[theme]);
                 Shape(room,"Right wall",new Vector3(5,2,12),new Vector3(.2f,4,24),colors[theme]);
+                for(int side=-1;side<=1;side+=2)
+                {
+                    Shape(room,"Baseboard",new Vector3(side*4.87f,.14f,12),new Vector3(.08f,.28f,24),new Color(.8f,.78f,.72f));
+                    Shape(room,"Crown trim",new Vector3(side*4.87f,3.9f,12),new Vector3(.1f,.15f,24),new Color(.8f,.78f,.72f));
+                }
                 Shape(room,"Door header",new Vector3(0,3.7f,23.8f),new Vector3(10,.5f,.35f),colors[theme]);
                 for (int l=-1;l<=1;l++)
                 {
@@ -158,8 +163,36 @@ namespace HomeRunner
                 }
             }
         }
+        bool PlaceFurniture(Transform parent,string asset,float xPos,float z,float maxWidth=1.5f)
+        {
+            var prefab=Resources.Load<GameObject>("HomeRunner/Furniture/"+asset);
+            if(prefab==null) return false;
+            var holder=new GameObject(asset).transform; holder.SetParent(parent,false);
+            holder.localPosition=new Vector3(xPos,0,z);
+            var model=Instantiate(prefab,holder);
+            // Normalize imported OBJ axes and scale using rendered bounds, preserving proportions.
+            var renderers=model.GetComponentsInChildren<Renderer>();
+            if(renderers.Length==0) { Destroy(holder.gameObject); return false; }
+            var bounds=renderers[0].bounds;
+            foreach(var renderer in renderers) bounds.Encapsulate(renderer.bounds);
+            float scale=Mathf.Min(maxWidth/Mathf.Max(bounds.size.x,.01f),2.6f/Mathf.Max(bounds.size.y,.01f));
+            model.transform.localScale*=scale;
+            Vector3 center=holder.InverseTransformPoint(bounds.center);
+            model.transform.localPosition=new Vector3(-center.x*scale,-(center.y-bounds.size.y*.5f)*scale,-center.z*scale);
+            foreach(var collider in model.GetComponentsInChildren<Collider>()) Destroy(collider);
+            return true;
+        }
         void Decorate(Transform room,int theme,float xPos,float z)
         {
+            int slot=Mathf.RoundToInt((z-4)/6);
+            string[][] sets={
+                new[]{"kitchenFridge","kitchenStove","kitchenSink"},
+                new[]{"desk","cardboardBoxClosed","bookcaseOpen"},
+                new[]{"loungeSofa","tableCoffee","pottedPlant"},
+                new[]{"bench","pottedPlant","bench"},
+                new[]{"televisionModern","loungeChairRelax","speaker"}
+            };
+            if(PlaceFurniture(room,sets[theme][Mathf.Clamp(slot,0,2)],xPos,z)) return;
             Color dark=new Color(.16f,.19f,.25f), white=new Color(.85f,.86f,.8f);
             if(theme==0)
             {
@@ -256,7 +289,7 @@ namespace HomeRunner
             leftLeg.localRotation=Quaternion.Euler(swing,0,0); rightLeg.localRotation=Quaternion.Euler(-swing,0,0);
             leftArm.localRotation=Quaternion.Euler(-swing,0,-8); rightArm.localRotation=Quaternion.Euler(swing,0,8);
             }
-            body.localRotation=Quaternion.Euler(dead?65:slide>0?15:0,0,(x-lane*2.6f)*-5);
+            body.localRotation=Quaternion.Euler(characterAnimator != null?0:dead?65:slide>0?15:0,0,(x-lane*2.6f)*-5);
             Vector3 desired=runner.position+new Vector3(-x*.6f,3.4f,-7);
             // Origin shifts happen by exactly one room, so snap z to prevent a camera sweep.
             Vector3 cameraPos=view.transform.position;
